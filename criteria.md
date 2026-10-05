@@ -1,33 +1,14 @@
-# Acceptance criteria — FitFindr
-
-Five criteria that say what "working" means for this agent, written in unit 3
-**before** any results existed.
-
-An acceptance criterion names a target: a number, a count, a rate, or something
-a person could plainly observe. *"The agent handles errors"* is an opinion.
-*"When search returns nothing, the agent stops before calling the second tool,
-in 5 of 5 tries"* is a criterion.
-
-Under each one, write a sentence or two on **why that target** and not a
-stricter one. A reason that says something about your tools, your loop, or the
-data earns credit; *"80% seemed reasonable"* does not.
-
-> Missing your own targets next unit costs you nothing. Setting a target so
-> easy you can't miss it does.
-
-**Two are written for you. You write three.**
-
----
-
 ## 1. A matching query completes all three tools
 
 Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+`search_listings` scores by keyword overlap with the title, description, and
+style tags, so a query phrased differently from how a listing is written
+(e.g. "comfy jeans" vs. a listing tagged "relaxed fit") can score zero and
+return nothing, even when a human would call it a match. 4 of 5 allows for
+that kind of phrasing mismatch without accepting a search that fails often.
 
 ---
 
@@ -37,66 +18,49 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+This path is a single structural check — did the list come back empty — with
+no model call and no keyword scoring involved, so nothing about it is
+probabilistic. It should work every time or something is actually broken.
 
 ---
 
-## 3. Something about state
+## 3. The selected item stays the same across tool calls
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+For 5 different matching queries, the `id` of the item in
+`session["selected_item"]` matches the `id` of the item that `suggest_outfit`
+is actually called with, in all 5 tries.
 
 **Why this target:**
-
-
+Reading a value back out of a dict either works or it doesn't — there's no
+reason this would succeed sometimes and fail other times, so the target is
+5 of 5, not a rate.
 
 ---
 
-## 4. Something about the fit card
+## 4. The fit card names the item's price and platform
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+For 5 different items, the generated fit card mentions the item's price and
+its platform (e.g. "depop", "poshmark") at least once each, in at least 4 of
+5 tries.
 
 **Why this target:**
-
-
+The caption's exact wording changes because it comes from the model, but
+price and platform are fixed facts handed to the prompt, not something the
+model invents. 4 of 5 allows for the model occasionally dropping one detail
+in favor of a shorter sentence, without accepting it dropping both regularly.
 
 ---
 
-## 5. Your choice
+## 5. The agent respects the price ceiling
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+For 5 queries that each include an explicit "under $X" phrase, every item
+returned by `search_listings` has `price <= X`, in 5 of 5 tries.
 
 **Why this target:**
-
-
+This is a plain numeric comparison on data the tool already has — `price`
+against `max_price` — not something that depends on the model or on
+ambiguous keyword matching, so there's no scenario where it should fail
+even once.
 
 ---
 
