@@ -1,7 +1,7 @@
 import re
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import search_listings, suggest_outfit, create_fit_card, compare_price
 from generate import ModelUnavailable
 
 def new_session(query: str, wardrobe: dict) -> dict:
@@ -16,6 +16,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "wardrobe": wardrobe,        # the user's wardrobe
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
+        "price_comparison": None,    # what compare_price returned (stretch)
         "error": None,               # set when the run ended early
     }
 
@@ -106,6 +107,16 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         session["error"] = str(exc)
         return session
 
+    # 6. Compare the price (stretch: fourth tool).
+    iteration += 1
+    trace.check_iterations(iteration)
+
+    try:
+        session["price_comparison"] = compare_price(session["selected_item"])
+    except ModelUnavailable as exc:
+        session["error"] = str(exc)
+        return session
+
     return session
 
     # ── running it directly ───────────────────────────────────────────────────────
@@ -120,6 +131,7 @@ def _show(session: dict) -> None:
     print(f"  found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
     print(f"  outfit:   {session['outfit_suggestion']}")
     print(f"  fit card: {session['fit_card']}")
+    print(f"  price:    {session['price_comparison']}")
 
 
 if __name__ == "__main__":

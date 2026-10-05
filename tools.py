@@ -168,3 +168,46 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         "finds, 2-4 sentences, in a real human voice."
     )
     return generate(prompt, system=system)
+
+# ── Tool 4 (stretch): compare_price ─────────────────────────────────────────
+
+def compare_price(item: dict) -> str:
+    """
+    Compare an item's price against the average price of other listings in
+    the same category.
+
+    Args:
+        item: a listing dict — the item to compare.
+
+    Returns:
+        A one-sentence comparison, e.g. "At $15.00, this is 32% below the
+        average price for tops ($22.14)." If there are no other listings in
+        the same category, returns a message saying there's nothing to
+        compare it to.
+    """
+    listings = load_listings()
+    same_category = [
+        listing for listing in listings
+        if listing["category"] == item["category"] and listing["id"] != item["id"]
+    ]
+
+    if not same_category:
+        return (
+            f"No other {item['category']} listings to compare "
+            f"{item['title']} against."
+        )
+
+    avg_price = sum(listing["price"] for listing in same_category) / len(same_category)
+    diff_pct = ((item["price"] - avg_price) / avg_price) * 100
+
+    if diff_pct < -5:
+        comparison = f"{abs(diff_pct):.0f}% below"
+    elif diff_pct > 5:
+        comparison = f"{diff_pct:.0f}% above"
+    else:
+        comparison = "about the same as"
+
+    return (
+        f"At ${item['price']:.2f}, this is {comparison} the average price "
+        f"for {item['category']} (${avg_price:.2f})."
+    )
