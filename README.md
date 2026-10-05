@@ -101,6 +101,24 @@ FitFindr is a thrifting agent. A user types what they want in plain language —
 
 ---
 
+## Stretch Feature: A Second Branch (declared before building)
+
+**Declared:** In addition to the required empty-search branch, I added a second branch that checks whether anything meaningful is left to search on *before* calling `search_listings` at all.
+
+**The condition:** After stripping out the size and price phrases from the query, if the remaining `description` is empty — e.g. a query like "under $30" with no actual item description — the loop stops immediately and asks the user to describe what they're looking for, without ever calling `search_listings`.
+
+**Why this is a different branch from the required one:** The required branch handles `search_listings` running and legitimately finding nothing. This branch catches a different failure earlier — a query with no real content to search on in the first place. The two are observably different: in the required branch, `session["search_results"]` holds the (empty) return value of a real search call; in this branch, `search_listings` is never invoked, so there was nothing to search with.
+
+**Run showing the branch taken:**
+
+```
+$ python -c "from agent import run_agent; from utils.data_loader import get_example_wardrobe; s = run_agent('under `$30', get_example_wardrobe()); print(s['error']); print('search_results:', s['search_results']); print('fit_card:', s['fit_card'])"
+Please describe what you're looking for — a size or a price alone isn't enough to search on.
+search_results: []
+fit_card: None
+```
+---
+
 ## Sample Run
 
 **One full query**
