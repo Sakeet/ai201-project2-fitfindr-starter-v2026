@@ -103,33 +103,38 @@ FitFindr is a thrifting agent. A user types what they want in plain language —
 
 ## Sample Run
 
-<!-- Two things go here.
-
-     1. One FULL query and its output, pasted as text.
-     2. Your three per-tool terminal tests — the command and what it printed. -->
-
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python agent.py
 
+=== A query the data can match ===
+  found:    Mesh Long-Sleeve Top — Black — $15.0 on depop
+  outfit:   Layer the mesh long-sleeve top directly over the white ribbed tank top, and pair them with the baggy straight-leg jeans secured by the brown leather belt. Finish this grunge-meets-streetwear look by stepping into the black combat boots and accessorizing with the black crossbody bag.
+
+            Alternatively, create a contrasting y2k texture play by layering the black cropped zip hoodie open over the mesh long-sleeve top, paired with the wide-leg khaki trousers. Complete the outfit with the chunky white sneakers and the black crossbody bag.
+  fit card: Literally obsessed with this black mesh long-sleeve for only $15. Throw it over a white tank with some baggy denim and combat boots for the ultimate 90s grunge moment, or go full Y2K with some khaki trousers. Already listed this bad boy on Depop if you need it in your rotation! ✨
+
+=== A query it can't ===
+  stopped: No listings matched. Try raising the price limit, dropping the size filter, or using fewer or different keywords.
+  fit_card is None — it should still be None here
 ```
 
 **The three tools, tested one at a time**
 
 ```
 $ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-
+[8 matching listing dicts returned, each with a title containing "tee" or a tee-related style tag, all priced at or under $30, sorted by keyword score then price — e.g. {'id': 'lst_017', 'title': 'Mesh Long-Sleeve Top — Black', 'price': 15.0, 'platform': 'depop', 'style_tags': ['y2k', 'grunge', 'goth', 'layering'], ...}]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
-
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
+Pair the Vintage Levi's 501 Jeans with the fitted White ribbed tank top tucked in, layered under the slightly cropped Vintage black denim jacket, and finish the look with the chunky white sneakers. For a streetwear edge, wear the Vintage Levi's 501 Jeans with the Black cropped zip hoodie and lace-up Black combat boots.
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
-
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
+Nothing beats the ultimate 90s slouch of a broken-in pair of vintage 501s. Just add your favorite beat-up white sneakers and you've got that effortless off-duty model vibe locked down. Snag these medium wash beauties on my Depop right now for just $38.
 ```
 
 ---
@@ -145,15 +150,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I was working in what turned out to be a stale, nested clone of this repo — in a folder with no `.venv` and a commit history that didn't match what I'd actually pushed. I asked Claude to help me figure out why `pip show google-genai` said the package wasn't found even though `test.py` had passed earlier.
+- *What came back:* Claude had me run `git remote -v` and `git log --oneline -5` in that folder. The remote was correct, but the log showed commits like "initial commit" and "updates" instead of my real Milestone 2 commit — meaning this was a different, out-of-date checkout of the same repo, not the one I'd been working in.
+- *What I changed:* I ran `git pull` to bring that folder up to date, rebuilt `.venv` there, reinstalled `requirements.txt`, and copied a fresh `.env` with my API key. After that, `test.py` passed 10/10 and the tool tests worked.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* After wiring up `run_agent()` in `agent.py`, running `python agent.py` produced zero output and exited with code 0 — no error, no print statements, nothing. I asked Claude to help me figure out why.
+- *What came back:* Claude walked me through checking, in order: whether the file was actually saved (it was), whether the module imported cleanly (it did, with `python -c "import agent"`), and finally the literal last 25 lines of the file on disk with `Get-Content agent.py -Tail 25`. That showed the entire `_show()` function and the `if __name__ == "__main__":` block had been deleted — they weren't in the file at all, which explained why nothing printed when the script ran directly.
+- *What I changed:* I re-added `_show()` and the `__main__` block at the bottom of `agent.py`. I also found, while doing that, that `new_session()` was missing entirely (an earlier edit had dropped it too), so I added that back as well. After the fix, `python agent.py` ran both example paths correctly — the happy path completing all three tools, and the empty-search path stopping early with `fit_card` still `None`.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
