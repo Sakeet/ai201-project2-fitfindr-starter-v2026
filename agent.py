@@ -51,6 +51,14 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         "max_price": max_price,
     }
 
+    # SECOND BRANCH: no real description left to search on.
+    if not description:
+        session["error"] = (
+            "Please describe what you're looking for — a size or a price "
+            "alone isn't enough to search on."
+        )
+        return session
+
     # 2. Search.
     iteration += 1
     trace.check_iterations(iteration)
