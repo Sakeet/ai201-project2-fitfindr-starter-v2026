@@ -101,24 +101,6 @@ FitFindr is a thrifting agent. A user types what they want in plain language —
 
 ---
 
-## Stretch Feature: A Second Branch (declared before building)
-
-**Declared:** In addition to the required empty-search branch, I added a second branch that checks whether anything meaningful is left to search on *before* calling `search_listings` at all.
-
-**The condition:** After stripping out the size and price phrases from the query, if the remaining `description` is empty — e.g. a query like "under $30" with no actual item description — the loop stops immediately and asks the user to describe what they're looking for, without ever calling `search_listings`.
-
-**Why this is a different branch from the required one:** The required branch handles `search_listings` running and legitimately finding nothing. This branch catches a different failure earlier — a query with no real content to search on in the first place. The two are observably different: in the required branch, `session["search_results"]` holds the (empty) return value of a real search call; in this branch, `search_listings` is never invoked, so there was nothing to search with.
-
-**Run showing the branch taken:**
-
-```
-$ python -c "from agent import run_agent; from utils.data_loader import get_example_wardrobe; s = run_agent('under `$30', get_example_wardrobe()); print(s['error']); print('search_results:', s['search_results']); print('fit_card:', s['fit_card'])"
-Please describe what you're looking for — a size or a price alone isn't enough to search on.
-search_results: []
-fit_card: None
-```
----
-
 ## Sample Run
 
 **One full query**
@@ -132,6 +114,7 @@ $ python agent.py
 
             Alternatively, create a contrasting y2k texture play by layering the black cropped zip hoodie open over the mesh long-sleeve top, paired with the wide-leg khaki trousers. Complete the outfit with the chunky white sneakers and the black crossbody bag.
   fit card: Literally obsessed with this black mesh long-sleeve for only $15. Throw it over a white tank with some baggy denim and combat boots for the ultimate 90s grunge moment, or go full Y2K with some khaki trousers. Already listed this bad boy on Depop if you need it in your rotation! ✨
+  price:    At $15.00, this is 32% below the average price for tops ($22.21).
 
 === A query it can't ===
   stopped: No listings matched. Try raising the price limit, dropping the size filter, or using fewer or different keywords.
@@ -154,6 +137,37 @@ Pair the Vintage Levi's 501 Jeans with the fitted White ribbed tank top tucked i
 $ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
 Nothing beats the ultimate 90s slouch of a broken-in pair of vintage 501s. Just add your favorite beat-up white sneakers and you've got that effortless off-duty model vibe locked down. Snag these medium wash beauties on my Depop right now for just $38.
 ```
+
+---
+
+## Stretch Feature: A Second Branch (declared before building)
+
+**Declared:** In addition to the required empty-search branch, I added a second branch that checks whether anything meaningful is left to search on *before* calling `search_listings` at all.
+
+**The condition:** After stripping out the size and price phrases from the query, if the remaining `description` is empty — e.g. a query like "under $30" with no actual item description — the loop stops immediately and asks the user to describe what they're looking for, without ever calling `search_listings`.
+
+**Why this is a different branch from the required one:** The required branch handles `search_listings` running and legitimately finding nothing. This branch catches a different failure earlier — a query with no real content to search on in the first place. The two are observably different: in the required branch, `session["search_results"]` holds the (empty) return value of a real search call; in this branch, `search_listings` is never invoked, so there was nothing to search with.
+
+**Run showing the branch taken:**
+
+```
+$ python -c "from agent import run_agent; from utils.data_loader import get_example_wardrobe; s = run_agent('under `$30', get_example_wardrobe()); print(s['error']); print('search_results:', s['search_results']); print('fit_card:', s['fit_card'])"
+Please describe what you're looking for — a size or a price alone isn't enough to search on.
+search_results: []
+fit_card: None
+```
+
+---
+
+## Stretch Feature: A Fourth Tool (declared before building)
+
+**Declared:** `compare_price(item: dict) -> str` — compares the selected item's price against the average price of other listings in the same category, and returns a one-sentence comparison.
+
+**What it returns:** A string like "At $15.00, this is 32% below the average price for tops ($22.21)." If there are no other listings in the same category, it returns a message saying there's nothing to compare the item against, rather than raising or dividing by zero.
+
+**Where it's wired in:** `agent.py::run_agent`, as a sixth step right after `create_fit_card`, storing its result in `session["price_comparison"]`.
+
+**Run showing the tool being called:** see the `price:` line in the Sample Run above — it's produced by this tool, called automatically as the final step of the happy path.
 
 ---
 
