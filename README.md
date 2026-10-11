@@ -283,12 +283,13 @@ that produced it:
 
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+**On the MCP move:**
 
+*What changed in the code.* `search_listings` is now registered as an MCP tool in `mcp_server.py`, using FastMCP. Its description is written for an agent that can't see my code. It says what the tool searches, how `size` matching works ("M" matches "M/L" and "S/M" but not "XL"), that `max_price` is in US dollars and inclusive, which fields each returned listing has, and that it returns an empty list `[]` rather than an error when nothing matches. The input types (`description: str`, `size: str | None`, `max_price: float | None`) are the same as in my Tool Inventory. `python mcp_client.py` lists the tool with all three inputs, `size` and `max_price` marked optional.
 
+In `agent.py::run_agent`, the direct call `search_listings(description, size=size, max_price=max_price)` is now `call_tool("search_listings", {"description": ..., "size": ..., "max_price": ...})` from `mcp_client.py`. I also changed the `except` around that call from `ModelUnavailable` to `MCPError`. `search_listings` never calls the model, so `ModelUnavailable` could never be raised at that step. The failure that can actually happen there now is the MCP server not starting or refusing the call, and that shows up as `MCPError`. The other tools (`suggest_outfit`, `create_fit_card`, `compare_price`) are still called directly.
+
+*What behaved differently.* The results didn't change. After the move, `python agent.py` found the same Mesh Long-Sleeve Top — Black, $15 on Depop, as the Sample Run above (recorded before the move), and the ballgown query still stopped with `fit_card` as `None`. `python app.py ask 'vintage graphic tee under $30'` returned the Y2K Baby Tee — Butterfly Print, $18 on Depop, the same as before the move. The only visible difference is speed: each run is slightly slower, because `call_tool` starts the server, makes the call, and shuts the server down every time.
 
 ---
 

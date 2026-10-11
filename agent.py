@@ -3,6 +3,7 @@ import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card, compare_price
 from generate import ModelUnavailable
+from mcp_client import call_tool, MCPError
 
 def new_session(query: str, wardrobe: dict) -> dict:
     """
@@ -65,9 +66,13 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     trace.check_iterations(iteration)
 
     try:
-        results = search_listings(description, size=size, max_price=max_price)
-    except ModelUnavailable as exc:
-        session["error"] = str(exc)
+        results = call_tool("search_listings", {
+            "description": description,
+            "size": size,
+            "max_price": max_price,
+        })
+    except MCPError as exc:
+        session["error"] = f"The listing search couldn't be reached: {exc}"
         return session
 
     session["search_results"] = results
