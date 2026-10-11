@@ -53,6 +53,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         "max_price": max_price,
     }
 
+    trace.step("parse_query", inputs=repr(query), returned=str(session["parsed"]))
+
     # SECOND BRANCH: no real description left to search on.
     if not description:
         session["error"] = (
@@ -77,6 +79,12 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
     session["search_results"] = results
 
+    trace.step(
+        "search_listings (via MCP)",
+        inputs=str({"description": description, "size": size, "max_price": max_price}),
+        returned=f"{len(results)} listings: " + ", ".join(r["title"] for r in results[:3]),
+    )
+
     # THIS IS THE BRANCH.
     if not results:
         session["error"] = (
@@ -96,6 +104,12 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         session["outfit_suggestion"] = suggest_outfit(
             session["selected_item"], session["wardrobe"]
         )
+        trace.step(
+            "suggest_outfit",
+            inputs=str({"item": session["selected_item"]["title"],
+                        "wardrobe_items": len(session["wardrobe"].get("items", []))}),
+            returned=session["outfit_suggestion"],
+        )
     except ModelUnavailable as exc:
         session["error"] = str(exc)
         return session
@@ -108,6 +122,11 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         session["fit_card"] = create_fit_card(
             session["outfit_suggestion"], session["selected_item"]
         )
+        trace.step(
+            "create_fit_card",
+            inputs=str({"item": session["selected_item"]["title"], "outfit": "(from suggest_outfit)"}),
+            returned=session["fit_card"],
+        )
     except ModelUnavailable as exc:
         session["error"] = str(exc)
         return session
@@ -118,13 +137,19 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
     try:
         session["price_comparison"] = compare_price(session["selected_item"])
+        trace.step(
+            "compare_price",
+            inputs=str({"item": session["selected_item"]["title"]}),
+            returned=session["price_comparison"],
+        )
     except ModelUnavailable as exc:
         session["error"] = str(exc)
         return session
 
     return session
 
-    # ── running it directly ───────────────────────────────────────────────────────
+
+# ── running it directly ───────────────────────────────────────────────────────
 
 def _show(session: dict) -> None:
     if session["error"]:

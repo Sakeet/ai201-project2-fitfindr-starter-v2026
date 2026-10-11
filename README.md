@@ -271,17 +271,66 @@ that produced it:
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
+Produced by `trace.step()` calls in `agent.py::run_agent`, one after each step, printed by `python app.py ask '...' --trace`. Step `[2]` is the MCP call: `run_agent()` calls `search_listings` through `mcp_client.call_tool`, not directly.
+
 **Happy path**
 
 ```
+$ python app.py ask 'vintage graphic tee under $30' --trace
+[1] parse_query
+     in:  'vintage graphic tee under $30'
+     out: {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+[2] search_listings (via MCP)
+     in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+     out: 10 listings: Y2K Baby Tee — Butterfly Print, Vintage Band Tee — Faded Grey, Graphic Tee — 2003 Tour Bootleg St…
+[3] suggest_outfit
+     in:  {'item': 'Y2K Baby Tee — Butterfly Print', 'wardrobe_items': 10}
+     out: Pair the Y2K Baby Tee — Butterfly Print with the baggy straight-leg jeans and the chunky white sneakers for a …
+[4] create_fit_card
+     in:  {'item': 'Y2K Baby Tee — Butterfly Print', 'outfit': '(from suggest_outfit)'}
+     out: Found the ultimate butterfly baby tee and I'm literally obsessed. Perfect fit for that effortless 2000s mall r…
+[5] compare_price
+     in:  {'item': 'Y2K Baby Tee — Butterfly Print'}
+     out: At $18.00, this is 18% below the average price for tops ($22.00).
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Pair the Y2K Baby Tee — Butterfly Print with the baggy straight-leg jeans and the chunky white sneakers for a classic Y2K streetwear look. Layer the slightly cropped Vintage black denim jacket on top and accessorize with the black crossbody bag.
+
+  Fit card: Found the ultimate butterfly baby tee and I'm literally obsessed. Perfect fit for that effortless 2000s mall rat aesthetic, especially styled with baggy denim and chunky kicks. Grab it on my Depop for just $18 before I change my mind and keep it.
+
+0 model calls this session, 2 served from cache
 ```
 
 **Empty search**
 
 ```
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] parse_query
+     in:  'designer ballgown size XXS under $5'
+     out: {'description': 'designer ballgown under $5', 'size': 'XXS', 'max_price': 5.0}
+[2] search_listings (via MCP)
+     in:  {'description': 'designer ballgown under $5', 'size': 'XXS', 'max_price': 5.0}
+     out: 0 listings:
 
+  No listings matched. Try raising the price limit, dropping the size filter, or using fewer or different keywords.
+
+0 model calls this session
 ```
+
+The empty-search trace stops after step `[2]`: the branch in `run_agent()` returns before `suggest_outfit`, so no model is called. The happy path runs all five steps.
+
+**What the trace showed that I hadn't seen before.** In the empty-search run, `parse_query` read the size (`XXS`) and the price (`5.0`) correctly, but left `under $5` in the description. `run_agent()` cuts the size phrase out of the query first, and then cuts the price phrase using positions that `re.search` measured on the *original* query. Because removing the size has already shifted the text to the left, those positions point past the end of the shorter string, so nothing gets removed. This happens whenever a query has a size before a price. I haven't changed it here. It's a candidate for my one improvement, depending on what the test run shows.
+
+**Failure modes, triggered on purpose**
+
+| Failure | How I triggered it | What the agent said | Handler needed? |
+|---|---|---|---|
+| Empty search | `python app.py ask 'designer ballgown size XXS under $5'` | "No listings matched. Try raising the price limit, dropping the size filter, or using fewer or different keywords." | No. The empty-search branch in `agent.py::run_agent` already sets this message and stops before `suggest_outfit`; `app.py::_ask_one` prints it. |
+| Empty wardrobe | `python app.py ask 'vintage graphic tee under $30' --empty-wardrobe` | General styling advice for the Y2K Baby Tee (low-rise cargo pants and chunky platform sneakers, or a tiered midi skirt with a beaded shoulder bag and strappy sandals), with no wardrobe pieces named. No crash, no empty string. | No. `tools.py::suggest_outfit` already handles an empty `wardrobe["items"]`. |
+| Model unavailable | Changed one character of `GEMINI_API_KEY` in `.env`, then ran a query I hadn't asked before: `python app.py ask 'black leather jacket under $60'` | "The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com." No stack trace and no hang. | No. `generate.py` raises `ModelUnavailable` with that message, and `agent.py::run_agent` catches it and puts it in `session["error"]`. |
+
+All three already produced a message I'd show a user, so I didn't add a new handler. The only error-handling change in this unit is the one from the MCP move: the search step now catches `MCPError`, the failure that can actually happen there.
 
 **On the MCP move:**
 
