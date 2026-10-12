@@ -210,19 +210,73 @@ fit_card: None
      `python run_eval.py --label before` runs everything and writes the table
      into results/. Paste it here and fill in the verdicts. -->
 
+Produced by `python run_eval.py --label before` (`run_eval.py::main`), caching off, temperature 0.9. Full output: `results/run_2026-10-11_2133_before.md`.
+
+**How the tries are counted** (written into `scenarios.py` and committed before the run):
+
+- Criteria 1 and 2 each have one scenario, run 5 times. Each run is one try.
+- Criteria 3, 4 and 5 are about five *different* items, so they share five scenarios ("item 1 of 5" … "item 5 of 5"), each a different matching query with an "under $X" phrase. For these, **Try N = item N's first run**. `run_eval.py` runs each item five times; I checked the other four runs too and report anything they show.
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The selected item stays the same across tool calls | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card names the item's price and platform | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. The agent respects the price ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+Items used for criteria 3–5: (1) "vintage graphic tee under $30" → Y2K Baby Tee, `lst_002`; (2) "silk slip dress under $40" → 90s Silk Slip Dress, `lst_013`; (3) "denim jacket size M under $50" → Mesh Long-Sleeve Top, `lst_017`; (4) "cargo pants under $35" → Low-Rise Cargo Pants, `lst_011`; (5) "501 jeans under $45" → Vintage Levi's 501 Jeans, `lst_001`.
+
+**Real output from one try per criterion.** All of it comes from `run_eval.py::run_once`, which calls `agent.py::run_agent`. The trace lines come from the `trace.step()` calls in `agent.py::run_agent`, and the fit cards from `tools.py::create_fit_card`.
+
+*Criterion 1, "matching query completes", Try 1:*
 
 ```
+- stopped early: no
+- selected_item: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+- search_results: 10
 
+Fit card:
+Found the ultimate 2000s butterfly tee and honestly, I'm never taking it off. Throw it on with baggy denim and chunky sneakers for that effortless off-duty model look. Grab it on my Depop right now for just $18 before I change my mind and keep it! 🦋✨
+```
+
+*Criterion 2, "impossible query stops early", Try 1:*
+
+```
+- stopped early: yes — No listings matched. Try raising the price limit, dropping the size filter, or using fewer or different keywords.
+- selected_item: (none)
+- search_results: 0
+
+[1] parse_query
+      in:  'designer ballgown size XXS under $5'
+      out: {'description': 'designer ballgown under $5', 'size': 'XXS', 'max_price': 5.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'designer ballgown under $5', 'size': 'XXS', 'max_price': 5.0}
+      out: 0 listings, prices []:
+```
+
+*Criterion 3, "item 4 of 5", Try 1:*
+
+```
+[3] select_item
+      in:  first of search_results
+      out: {'id': 'lst_011', 'title': 'Low-Rise Cargo Pants — Khaki'}
+[4] suggest_outfit
+      in:  {'item_id': 'lst_011', 'item': 'Low-Rise Cargo Pants — Khaki', 'wardrobe_items': 10}
+```
+
+*Criterion 4, "item 4 of 5", Try 1* (price $27.0, platform poshmark):
+
+```
+Can we talk about these khaki low-rise cargos? Found them for just $27 on Poshmark and honestly, they're the ultimate 90s skater-girl dream. Just throw on a basic ribbed tank, chunky sneakers, and a vintage jacket and you've got that effortless off-duty model vibe totally locked down.
+```
+
+*Criterion 5, "item 2 of 5", Try 1* (ceiling $40):
+
+```
+[2] search_listings (via MCP)
+      in:  {'description': 'silk slip dress', 'size': None, 'max_price': 40.0}
+      out: 4 listings, prices [30.0, 12.0, 28.0, 38.0]: 90s Silk Slip Dress — Floral, Midi Length, Leather Belt — Brown, …
 ```
 
 ---
@@ -247,14 +301,34 @@ that produced it:
 
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | A matching query completes all three tools | 4 of 5 | MET (5/5) | All 5 runs of "vintage graphic tee under $30" ended with `stopped early: no` and a non-empty fit card. |
+| 2 | An impossible query stops before the second tool | 5 of 5 | MET (5/5) | All 5 runs stopped with the "No listings matched…" message, and every trace ends at `[2] search_listings`, with no `suggest_outfit` step. |
+| 3 | The selected item stays the same across tool calls | 5 of 5 | MET (5/5) | For each of the 5 items, the `id` in the `select_item` trace step equals the `item_id` in the `suggest_outfit` step (`lst_002`, `lst_013`, `lst_017`, `lst_011`, `lst_001`). |
+| 4 | The fit card names the item's price and platform | 4 of 5 | MET (5/5) | Each of the 5 fit cards contains the item's price ($18, $30, $15.00, $27, $38) and its platform (Depop ×4, Poshmark ×1), checked against the `selected_item` line. |
+| 5 | The agent respects the price ceiling | 5 of 5 | MET (5/5) | In each `search_listings` trace step, every price in the list is ≤ the query's X (max 26 ≤ 30, 38 ≤ 40, 45 ≤ 50, 32 ≤ 35, 38 ≤ 45). |
 
 **Diagnoses**
 
+**I missed nothing, and my targets were too low.** Every criterion was met at 5/5, including the two whose target was 4 of 5. The extra runs agree: across all 30 runs that reached a model, every id matched, every fit card named its price and platform, and every price was under its ceiling. But the run also shows a real failure that no criterion caught.
+
+**What no criterion caught: the agent returned the wrong kind of item.** "denim jacket size M under $50" returned a **Mesh Long-Sleeve Top** in all 5 runs. It passed criteria 3, 4 and 5 anyway, because none of them checks that the item is what the user asked for. Criterion 1 is the one I'd tighten: "returns a fit card" only checks that the loop finished, not that it found the right thing. A tighter version: *for 5 matching queries that name a kind of item, the selected item's title or category is that kind of item, in at least 4 of 5 tries.*
+
+**Diagnosis of the wrong item.** Two places, one chain:
+
+1. **The loop's parse step** (`agent.py::run_agent`). The query has a size *before* a price. `run_agent()` cuts the size phrase out first, then cuts the price phrase using positions that `re.search` measured on the *original* query. Removing the size has already shifted the text left, so the second cut lands in the wrong place and leaves "under" behind. The trace shows it: `out: {'description': 'denim jacket under', 'size': 'M', 'max_price': 50.0}`. The same bug turns "designer ballgown size XXS under $5" into the description `'designer ballgown under $5'`.
+2. **The search tool's scoring** (`tools.py::search_listings`). It counts every word of the description as a keyword, with no list of filler words to ignore, and matches with a substring test (`kw in haystack`). So the leaked "under" scores a point for the Mesh Long-Sleeve Top, whose description says "layering **under** a graphic tee", though it contains neither "denim" nor "jacket". It ties with the denim items on score, and the tie-break (cheapest first) puts it first at $15.
+
+I confirmed which link matters by calling the search tool directly with and without the leaked word:
+
+```
+$ python -c "from tools import search_listings as s; print([r['title'] for r in s('denim jacket', 'M', 50.0)]); print([r['title'] for r in s('denim jacket under', 'M', 50.0)])"
+['Denim Vest — Medium Wash, Studded', 'Shacket — Olive Canvas', '90s Track Jacket — Navy/White Stripe']
+['Mesh Long-Sleeve Top — Black', 'Denim Vest — Medium Wash, Studded', 'Shacket — Olive Canvas', '90s Track Jacket — Navy/White Stripe']
+```
+
+Without "under", the mesh top isn't returned at all. With it, the mesh top comes first. So for this query the leaked word is the entire cause. The pattern: both links are the same weakness, filler words in the description being treated as meaningful. The same thing explains my unit 3 Sample Run, where "looking **for** a vintage graphic tee" also picked the mesh top ("Great **for** layering").
+
+**One more thing the run showed: a model error, handled.** Item 1, run 4 (not one of the counted tries) stopped with `Couldn't reach the model: 500 INTERNAL`. That's an error on the model service's side, not in my code. The agent caught it as `ModelUnavailable` in `agent.py::run_agent` and stopped with a message instead of crashing. It's also why the run made 59 model calls instead of 60. If it had happened in a counted try for criterion 1, that try would have been a FAIL, which is the kind of thing the 4-of-5 target was there to allow for.
 
 
 ---
