@@ -34,7 +34,9 @@ def search_listings(
 ) -> list[dict]:
     """
     Searches 40 secondhand clothing listings for items matching a free-text
-    keyword description, such as "vintage graphic tee".
+    keyword description, such as "vintage graphic tee". Common filler words
+    ("for", "looking", "a", "under", ...) are ignored, and keywords match
+    whole words only.
     `size` is optional: a size like "M", matched case-insensitively against the
     listing's size tokens, so "M" matches "M/L" and "S/M" but not "XL".
     `max_price` is optional: the highest price allowed, in US dollars, inclusive.

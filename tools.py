@@ -22,6 +22,19 @@ from utils.data_loader import load_listings
 
 _SIZE_SPLIT = re.compile(r"[\s/()]+")
 
+# Unit 4 stretch 3 (second improvement): words that say nothing about the item.
+# Before this, every word of the description counted as a keyword, so "for",
+# "looking" or a leaked "under" scored points against listings that happened
+# to contain them ("Great for layering", "layering under a graphic tee").
+_STOPWORDS = {
+    "a", "an", "and", "the", "for", "with", "in", "on", "of", "to", "or",
+    "i", "im", "me", "my", "some", "something", "any",
+    "looking", "want", "need", "find", "get", "buy", "show",
+    "under", "below", "over", "less", "than", "size",
+}
+
+_WORD = re.compile(r"[a-z0-9]+")
+
 
 def _size_tokens(size: str) -> set[str]:
     """Break a size string into lowercase tokens: 'M/L' -> {'m', 'l'}."""
@@ -42,7 +55,9 @@ def search_listings(
         - size: kept when the searched size token appears among the listing's
           size tokens (if given) — "M" matches "M/L" and "S/M", not "XL"
         - score: count of description keywords found in title + description +
-          style_tags; zero-scoring listings are dropped
+          style_tags; zero-scoring listings are dropped. Keywords skip common
+          filler words (_STOPWORDS) and must match a whole word, so "tee" no
+          longer matches "streetwear" (unit 4 stretch 3).
         - order: highest score first, then lowest price first on ties
 
     Returns an empty list when nothing matches — never None, never raises.
@@ -50,7 +65,10 @@ def search_listings(
     listings = load_listings()
 
     size_query = size.strip().lower() if size else None
-    keywords = [w for w in re.findall(r"[a-z0-9]+", description.lower()) if w]
+    keywords = [
+        w for w in _WORD.findall(description.lower())
+        if w and w not in _STOPWORDS
+    ]
 
     scored: list[tuple[int, dict]] = []
     for listing in listings:
@@ -68,7 +86,8 @@ def search_listings(
                 " ".join(listing["style_tags"]),
             ]
         ).lower()
-        score = sum(1 for kw in keywords if kw in haystack)
+        haystack_words = set(_WORD.findall(haystack))
+        score = sum(1 for kw in keywords if kw in haystack_words)
         if score == 0:
             continue
 
