@@ -40,11 +40,16 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     )
     max_price = float(price_match.group(1)) if price_match else None
 
+    # Cut the size and price phrases out of the query. Both matches were found
+    # on the original query, so cut the LATER one first: removing text near the
+    # end doesn't shift anything before it, so the earlier match's positions
+    # are still correct when it's cut. (Unit 4 improvement: cutting them in a
+    # fixed order left "under $X" in the description whenever the size came
+    # first.)
     description = query
-    if size_match:
-        description = description[: size_match.start()] + description[size_match.end():]
-    if price_match:
-        description = description[: price_match.start()] + description[price_match.end():]
+    matches = [m for m in (size_match, price_match) if m]
+    for match in sorted(matches, key=lambda m: m.start(), reverse=True):
+        description = description[: match.start()] + description[match.end():]
     description = re.sub(r"\s+", " ", description).strip()
 
     session["parsed"] = {
