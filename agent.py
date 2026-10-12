@@ -82,7 +82,10 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     trace.step(
         "search_listings (via MCP)",
         inputs=str({"description": description, "size": size, "max_price": max_price}),
-        returned=f"{len(results)} listings: " + ", ".join(r["title"] for r in results[:3]),
+        returned=(
+            f"{len(results)} listings, prices {[r['price'] for r in results]}: "
+            + ", ".join(r["title"] for r in results[:3])
+        ),
     )
 
     # THIS IS THE BRANCH.
@@ -95,6 +98,12 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
     # 3. Pick the first result (best score, cheapest on ties).
     session["selected_item"] = results[0]
+    trace.step(
+        "select_item",
+        inputs="first of search_results",
+        returned=str({"id": session["selected_item"]["id"],
+                      "title": session["selected_item"]["title"]}),
+    )
 
     # 4. Suggest an outfit.
     iteration += 1
@@ -106,7 +115,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         )
         trace.step(
             "suggest_outfit",
-            inputs=str({"item": session["selected_item"]["title"],
+            inputs=str({"item_id": session["selected_item"]["id"],
+                        "item": session["selected_item"]["title"],
                         "wardrobe_items": len(session["wardrobe"].get("items", []))}),
             returned=session["outfit_suggestion"],
         )
