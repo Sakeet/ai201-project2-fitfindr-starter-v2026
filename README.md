@@ -211,6 +211,20 @@ fit_card: None
 
 ---
 
+## Unit 4 Stretch Features (declaration)
+
+**A note on timing, so the commit history reads correctly.** I wrote this declaration before building any of the three stretch features, and meant to commit it on its own first. That commit didn't happen: when I ran `git commit` for it, git reported "nothing to commit" because I hadn't pasted the new README into the file, and I didn't notice. The stretch code was then committed first: stretch 1 and 2 in `b56b2de`, stretch 3 in the "Stretch 3: search ignores filler words…" commit. This declaration only reached the repository in the same commit as the results write-up further down. `git log -S "Stretch Features (declaration)"` will show that. I'm stating it plainly rather than rewriting the history. Whether the stretch features count under the "declared before building" rule is the grader's call. The text of the declaration below is unchanged from what I wrote before building.
+
+Each feature gets a results section further down, saying what it changed.
+
+**Stretch 1: A second tool moved onto MCP.** I'll register `compare_price` in `mcp_server.py` alongside `search_listings`, with a description and typed input, and change `agent.py::run_agent` to call it through `call_tool("compare_price", ...)` instead of directly. The trace step will be labelled `compare_price (via MCP)`, so a run shows it going through the MCP path. I picked `compare_price` because, like `search_listings`, it doesn't call a model.
+
+**Stretch 2: Retry with looser constraints.** When `search_listings` returns nothing *and* the query had a size, `run_agent` will search once more with the same description and price but **no size filter**. If the retry finds something, the agent continues and tells the user which constraint it dropped ("No listings in size XXS — showing other sizes instead."). If the retry also finds nothing, it stops as before, and the message says the size filter was already dropped. It retries at most once, and only the size is dropped, never the price. The trace will show both searches, labelled so the dropped constraint is visible. I'll add a diagnostic scenario to `scenarios.py` with a size that doesn't exist for an item that does, so the run log shows the retry.
+
+**Stretch 3: A second measured improvement.** From my diagnosis and "What's Still Broken" #1: `tools.py::search_listings` counts every word of the description as a keyword, including filler like "for" and "looking", and matches with a substring test, so "under" matches "underneath" and "tee" matches "streetwear". I'll change it to ignore common filler words and match whole words. To measure it the way I measured the first improvement, I'll do a full run **before** this change (run #3, after stretches 1 and 2 are in) and a full run **after** it (run #4), with the same scenarios. I'll add a diagnostic scenario using the agent's own example query, "looking for a vintage graphic tee under $30", which picked a Mesh Long-Sleeve Top in my unit 3 Sample Run. Run #4's log will be in the same table format, and I'll say whether the change helped, including if it made anything worse.
+
+---
+
 ## Run Log — Before
 
 <!-- Five criteria, five tries each, in this exact format.
@@ -406,7 +420,7 @@ $ python app.py ask 'designer ballgown size XXS under $5' --trace
 
 The empty-search trace stops after step `[2]`: the branch in `run_agent()` returns before `suggest_outfit`, so no model is called. The happy path runs all five steps.
 
-**What the trace showed that I hadn't seen before.** In the empty-search run, `parse_query` read the size (`XXS`) and the price (`5.0`) correctly, but left `under $5` in the description. `run_agent()` cuts the size phrase out of the query first, and then cuts the price phrase using positions that `re.search` measured on the *original* query. Because removing the size has already shifted the text to the left, those positions point past the end of the shorter string, so nothing gets removed. This happens whenever a query has a size before a price. I haven't changed it here. It's a candidate for my one improvement, depending on what the test run shows.
+**What the trace showed that I hadn't seen before.** In the empty-search run, `parse_query` read the size (`XXS`) and the price (`5.0`) correctly, but left `under $5` in the description. `run_agent()` cuts the size phrase out of the query first, and then cuts the price phrase using positions that `re.search` measured on the *original* query. Because removing the size has already shifted the text to the left, those positions point past the end of the shorter string, so nothing gets removed. This happens whenever a query has a size before a price. I haven't changed it here. It's a candidate for my one improvement, depending on what the test run shows. *(It became my improvement in Milestone 5; see The Improvement.)*
 
 **Failure modes, triggered on purpose**
 
@@ -499,6 +513,144 @@ It's also only a partial fix. The data has no denim *jacket* in size M under $50
 
 ---
 
+## Stretch Results
+
+Two more full runs, with the same five criteria, the same counting rule, caching off and temperature 0.9, plus two diagnostic scenarios added to `scenarios.py` for the stretch features:
+
+- **Run #3**, `results/run_2026-10-11_2250_stretch-before.md`: after stretches 1 and 2, **before** stretch 3.
+- **Run #4**, `results/run_2026-10-11_2309_stretch-after.md`: after stretch 3. Nothing else changed between #3 and #4.
+
+### Stretch 1: `compare_price` moved onto MCP
+
+**What changed:** `compare_price` is registered in `mcp_server.py` next to `search_listings`, with its own description (what it compares, the `item` input and which fields it uses, the one-sentence return, and the "nothing to compare" case) and a typed input `item: dict`. In `agent.py::run_agent`, step 6 now calls `call_tool("compare_price", {"item": session["selected_item"]})` instead of calling the function directly. An `MCPError` there is recorded in `session["price_comparison"]` rather than ending the run, so a failed price comparison doesn't throw away an outfit and fit card that were already made. `suggest_outfit` and `create_fit_card` are still called directly.
+
+**The server offers both tools** (`python mcp_client.py`):
+
+```
+  search_listings
+    Searches 40 secondhand clothing listings for items matching a free-text
+    keyword description, such as "vintage graphic tee". Common filler words
+    ("for", "looking", "a", "under", ...) are ignored, and keywords match
+    whole words only.
+    ...
+    - description: string
+    - size: string  (optional)
+    - max_price: number  (optional)
+
+  compare_price
+    Compares one listing's price with the average price of the OTHER listings
+    in the same category (e.g. "tops", "bottoms", "outerwear").
+    ...
+    - item: object
+```
+
+**A run going through the MCP path** (run #4, "matching query completes", Try 1):
+
+```
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 listings, prices [18.0, 19.0, 24.0, 15.0, 26.0, 12.0, 14.0, 16.0, 18.0, 20.0]: Y2K Baby Tee — Butterfly Pri…
+...
+[6] compare_price (via MCP)
+      in:  {'item': 'Y2K Baby Tee — Butterfly Print'}
+      out: At $18.00, this is 18% below the average price for tops ($22.00).
+```
+
+**Did anything behave differently?** No. The comparison sentences are the same as when `compare_price` was called directly (e.g. "At $18.00, this is 18% below the average price for tops ($22.00)." in both the after-run and run #4). It just takes a little longer, because each call starts the server.
+
+### Stretch 2: Retry with looser constraints
+
+**What changed:** In `agent.py::run_agent`, when `search_listings` returns nothing *and* the query had a size, the agent searches once more with the same description and price but `size: None`. Only the size is dropped, never the price, and it retries at most once. If the retry finds something, `session["relaxed"]` records it and `app.py` shows the user `Note: No listings in size XXS, so these are other sizes.` above the result. If the retry also finds nothing, the error says so: "No listings matched, even after dropping the size filter (size XXS)…".
+
+**The run log showing the retry and the dropped constraint** (run #3, diagnostic scenario "denim jacket size XXS under $50", Try 1; the same in all 10 runs of #3 and #4):
+
+```
+[1] parse_query
+      in:  'denim jacket size XXS under $50'
+      out: {'description': 'denim jacket', 'size': 'XXS', 'max_price': 50.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'denim jacket', 'size': 'XXS', 'max_price': 50.0}
+      out: 0 listings, prices []:
+[3] search_listings RETRY, dropped size filter 'XXS' (via MCP)
+      in:  {'description': 'denim jacket', 'size': None, 'max_price': 50.0}
+      out: 7 listings, prices [42.0, 24.0, 27.0, 30.0, 33.0, 38.0, 45.0]: Denim Jacket — Light Wash, Cropped, High-Waiste…
+[4] select_item
+      in:  first of search_results
+      out: {'id': 'lst_007', 'title': 'Denim Jacket — Light Wash, Cropped'}
+```
+
+The retry kept the $50 ceiling (every price ≤ 50) and found an actual denim jacket ($42, Poshmark). That also answers something from my diagnosis: the data *does* have a denim jacket under $50, just not in size M.
+
+**When the retry finds nothing too** (run #3, "impossible query stops early", every try):
+
+```
+- stopped early: yes — No listings matched, even after dropping the size filter (size XXS). Try raising the price limit or using fewer or different keywords.
+
+[3] search_listings RETRY, dropped size filter 'XXS' (via MCP)
+      in:  {'description': 'designer ballgown', 'size': None, 'max_price': 5.0}
+      out: 0 listings, prices []:
+```
+
+Criterion 2 still passes: there's an extra search step, but still no `suggest_outfit` step.
+
+### Stretch 3: A second measured improvement
+
+**What I changed:** One thing, in `tools.py::search_listings`. Keywords now skip a list of filler words (`_STOPWORDS`: "for", "looking", "a", "the", "under", "size", …), and a keyword only counts when it matches a **whole word** in the listing's title, description or style tags. Before, it was a substring test, so "tee" matched "streetwear". I added one sentence saying so to the `search_listings` description in `mcp_server.py`, because the published contract changed.
+
+**Which failure it was meant to fix:** "What's Still Broken" #1. Filler words in a query score points against listings that happen to contain them. The agent's own example query, "looking for a vintage graphic tee under $30", is the test case.
+
+**Run #3 (before this change)** and **Run #4 (after)**, the five criteria:
+
+| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
+|---|---|---|---|---|---|---|---|
+| **Run #3** | | | | | | | |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The selected item stays the same across tool calls | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card names the item's price and platform | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. The agent respects the price ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| **Run #4** | | | | | | | |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The selected item stays the same across tool calls | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card names the item's price and platform | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. The agent respects the price ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+Same counting rule as before. In both runs the five items were `lst_002`, `lst_013`, `lst_038`, `lst_011`, `lst_001`. Every fit card named its price and platform ($18 Depop, $30 Depop, $27.00 Depop, $27 Poshmark, $38 Depop in run #4's counted tries), and every price was under its ceiling.
+
+**The diagnostic it was meant to fix**, "looking for a vintage graphic tee under $30":
+
+| | Run #3 (before) | Run #4 (after) |
+|---|---|---|
+| Item selected, all 5 runs | Mesh Long-Sleeve Top — Black, `lst_017` ($15) | Y2K Baby Tee — Butterfly Print, `lst_002` ($18) |
+| Prices returned (top first) | `[15.0, 18.0, 19.0, 24.0, …]` | `[18.0, 19.0, 24.0, 15.0, …]` |
+
+Run #3:
+```
+[2] search_listings (via MCP)
+      in:  {'description': 'looking for a vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 listings, prices [15.0, 18.0, 19.0, 24.0, 18.0, 20.0, 22.0, 25.0, 26.0, 27.0]: Mesh Long-Sleeve Top — Black…
+```
+Run #4:
+```
+[2] search_listings (via MCP)
+      in:  {'description': 'looking for a vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 listings, prices [18.0, 19.0, 24.0, 15.0, 26.0, 12.0, 14.0, 16.0, 18.0, 20.0]: Y2K Baby Tee — Butterfly Pri…
+```
+
+With the filler words, "looking for a vintage graphic tee" now gives exactly the same top result as "vintage graphic tee". In run #3, "for" matched the Mesh Long-Sleeve Top's "Great **for** layering", gave it the same score as the Y2K Baby Tee, and the cheapest-first tie-break put it first. In run #4 "for" and "looking" don't count, so the Y2K Baby Tee scores higher and the mesh top drops to fourth.
+
+**Other changes the run showed** (also from this change, since nothing else changed between #3 and #4):
+
+- "silk slip dress under $40" returned 2 listings instead of 4. The Leather Belt — Brown ($12) and one other unrelated item dropped out; the slip dress and a Silk Button-Down remain. That's the whole-word rule removing partial-word matches.
+- "501 jeans under $45" returned 3 listings instead of 4. High-Waisted Denim Shorts dropped out, and the second result is now Straight Leg Black Jeans. The top item (the 501s) didn't change.
+
+**Did it help, and how do I know:** Yes. The diagnostic query that picked a mesh top in 5 of 5 runs of #3 picked the Y2K Baby Tee in 5 of 5 runs of #4, and other queries lost unrelated results (a belt for a slip dress, shorts for jeans) without losing the item they were looking for. All five criteria stayed MET at 5/5, so it didn't break anything they measure. As with my first improvement, the criteria table can't show the gain: it reads 5/5 in both runs, because none of my criteria checks whether the item is what was asked for. I measured it with the diagnostic scenario instead.
+
+One honest caveat: while checking the change by hand, I first ran my quick test against the *old* `tools.py`, because I hadn't saved the new file yet. Seeing the mesh top still first, I briefly concluded the fix didn't work, and that the mesh top would tie anyway because its description contains "graphic tee". After saving, the run showed that conclusion was wrong. The tie came from the filler word "for", which is what I first diagnosed.
+
+---
+
 ## What's Still Broken
 
 <!-- For each criterion still missed: what you'd do, and why you stopped where
@@ -507,7 +659,7 @@ It's also only a partial fix. The data has no denim *jacket* in size M under $50
 
 No criterion is still missed: all five were met in both runs. That's partly because my targets were too low, as I said in my diagnoses. Here is what's still broken, and what I'd do about each:
 
-**1. The search tool still treats filler words as matches.** My fix stops the parser from leaking "under", but `tools.py::search_listings` would still score any filler word the user types. It has no list of words to ignore, and it matches with a substring test (`kw in haystack`), so "for" matches "perfect for", "under" matches "underneath", and "tee" matches "streetwear". "looking for a vintage graphic tee under $30" (the query in `agent.py`'s own example) still sends `'looking for a vintage graphic tee'` to the search. In my unit 3 Sample Run, that picked the Mesh Long-Sleeve Top because its description says "Great **for** layering". *What I'd do:* drop common filler words before scoring, and match whole words instead of substrings. *Why I stopped:* the unit allows one improvement, and the parser bug was the direct cause of the failure the run showed. This is the second cause, and it would be my next change, measured the same way.
+**1. (Fixed afterwards as stretch 3 — see Stretch Results.) The search tool still treats filler words as matches.** My fix stops the parser from leaking "under", but `tools.py::search_listings` would still score any filler word the user types. It has no list of words to ignore, and it matches with a substring test (`kw in haystack`), so "for" matches "perfect for", "under" matches "underneath", and "tee" matches "streetwear". "looking for a vintage graphic tee under $30" (the query in `agent.py`'s own example) still sends `'looking for a vintage graphic tee'` to the search. In my unit 3 Sample Run, that picked the Mesh Long-Sleeve Top because its description says "Great **for** layering". *What I'd do:* drop common filler words before scoring, and match whole words instead of substrings. *Why I stopped:* the unit allows one improvement, and the parser bug was the direct cause of the failure the run showed. This is the second cause, and it would be my next change, measured the same way.
 
 **2. Ties are broken by price, not by how well an item fits.** The Denim Vest beats the Shacket and the 90s Track Jacket for "denim jacket" because it's the cheapest. All three score on a single word. A user asking for a jacket would probably rather see a jacket. *What I'd do:* weight matches in the title higher than matches in the description, so the item type the user named counts for more. *Why I stopped:* same reason. One change per unit, and this one needs its own measurement.
 
