@@ -192,6 +192,18 @@ fit_card: None
 - *What came back:* Claude walked me through checking, in order: whether the file was actually saved (it was), whether the module imported cleanly (it did, with `python -c "import agent"`), and finally the literal last 25 lines of the file on disk with `Get-Content agent.py -Tail 25`. That showed the entire `_show()` function and the `if __name__ == "__main__":` block had been deleted — they weren't in the file at all, which explained why nothing printed when the script ran directly.
 - *What I changed:* I re-added `_show()` and the `__main__` block at the bottom of `agent.py`. I also found, while doing that, that `new_session()` was missing entirely (an earlier edit had dropped it too), so I added that back as well. After the fix, `python agent.py` ran both example paths correctly — the happy path completing all three tools, and the empty-search path stopping early with `fit_card` still `None`.
 
+**Unit 4 — Moment 3**
+
+- *What I asked for:* At the start of unit 4, `python app.py ask` printed "The planning loop isn't built yet" and every tool in my `tools.py` was a stub, even though I had finished unit 3. I asked Claude what to do, and we started rebuilding the tools. When `git push` was then rejected, I asked Claude why.
+- *What came back:* Claude had me run `git fetch` and `git log --oneline main..origin/main`. That listed nine commits on GitHub that my local folder didn't have, including "Milestone 4: build and test all three tools" and "Milestone 5: wire the planning loop". My finished unit 3 work was on GitHub; this folder was an out-of-date copy. Claude told me not to force-push or rebase, because that could overwrite the history that proves my criteria came before my results.
+- *What I changed:* I saved the rebuilt work on a backup branch (`git branch backup-oct11`), then ran `git reset --hard origin/main` so my folder matched what I'd submitted. Everything in unit 4 was then done on the agent I actually submitted in unit 3, as the assignment requires.
+
+**Unit 4 — Moment 4**
+
+- *What I asked for:* After adding `trace.step()` calls, the trace showed dicts only as their key names ("dict with keys: description, size, max_price"). Claude suggested passing the inputs as strings so the actual values would print, and I reran the empty-search query with `--trace`.
+- *What came back:* The trace now showed `out: {'description': 'designer ballgown under $5', ...}`. Claude pointed out that "under $5" should not have been in the description, and explained why: the parser cut the size phrase first, then cut the price phrase using positions measured on the original query. It suggested not fixing it yet, but writing it down and seeing whether the test run showed it mattering.
+- *What I changed:* Nothing at first. I put the scenario "denim jacket size M under $50" (size before price) into `scenarios.py` on purpose. The before-run showed it returning a mesh top. A direct call to `search_listings` with and without the word "under" proved the leaked word was the cause. That became my one improvement: cutting the later match first. In the after-run the same query returned a denim vest.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -423,25 +435,66 @@ In `agent.py::run_agent`, the direct call `search_listings(description, size=siz
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** One thing, in the parse step of `agent.py::run_agent`. Both the size match and the price match are found on the original query. The old code cut the size phrase out first and then cut the price phrase using its original positions, which were wrong by then. The new code cuts the two phrases **in reverse order of position, the later one first**. Removing text near the end of a string doesn't shift anything before it, so the earlier match's positions are still correct when it's cut. The change is five lines (commit `458b1ec`, "Milestone 5: fix parser…"). Nothing else in the agent, the tools or the scenarios changed between the two runs.
 
-**Which failure it was meant to fix:**
+```python
+# before
+description = query
+if size_match:
+    description = description[: size_match.start()] + description[size_match.end():]
+if price_match:
+    description = description[: price_match.start()] + description[price_match.end():]
+
+# after
+description = query
+matches = [m for m in (size_match, price_match) if m]
+for match in sorted(matches, key=lambda m: m.start(), reverse=True):
+    description = description[: match.start()] + description[match.end():]
+```
+
+**Which failure it was meant to fix:** The one in my diagnosis. For "denim jacket size M under $50" the word "under" leaked into the description, matched the Mesh Long-Sleeve Top's "layering under a graphic tee", and made a top the best match for a denim jacket query in 5 of 5 runs. No criterion caught it (see Verdicts and Diagnoses), so I measured it directly: the item selected for that query, in the same "item 3 of 5" scenario, before and after.
 
 ### Run Log — After
 
+Produced by `python run_eval.py --label after` (`run_eval.py::main`), with the same scenarios, the same counting rule, caching off and temperature 0.9. Full output: `results/run_2026-10-11_2221_after.md`.
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The selected item stays the same across tool calls | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card names the item's price and platform | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. The agent respects the price ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Did it help, and how do I know:**
+Items for criteria 3–5 after the fix: `lst_002`, `lst_013`, **`lst_038`** (was `lst_017`), `lst_011`, `lst_001`. Item 3's price ceiling still holds: `prices [27.0, 33.0, 45.0]`, all ≤ 50.
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
+**Before and after, side by side**
 
+| | Before | After |
+|---|---|---|
+| Criteria met | 5 of 5 (all at 5/5) | 5 of 5 (all at 5/5) |
+| "denim jacket size M under $50": description sent to search | `'denim jacket under'` | `'denim jacket'` |
+| "denim jacket size M under $50": item selected | Mesh Long-Sleeve Top, `lst_017` (tops), 5 of 5 runs | Denim Vest — Medium Wash, Studded, `lst_038` (outerwear), 5 of 5 runs |
+| "designer ballgown size XXS under $5": description sent to search | `'designer ballgown under $5'` | `'designer ballgown'` |
+| Model calls in the run | 59 (one 500 INTERNAL error from the model service) | 60 (no errors) |
+
+The after-run trace for item 3, Try 1:
+
+```
+[1] parse_query
+      in:  'denim jacket size M under $50'
+      out: {'description': 'denim jacket', 'size': 'M', 'max_price': 50.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'denim jacket', 'size': 'M', 'max_price': 50.0}
+      out: 3 listings, prices [27.0, 33.0, 45.0]: Denim Vest — Medium Wash, Studded, Shacket — Olive Canvas, 90s Track Ja…
+[3] select_item
+      in:  first of search_results
+      out: {'id': 'lst_038', 'title': 'Denim Vest — Medium Wash, Studded'}
+```
+
+**Did it help, and how do I know:** Yes, for the failure it targeted, and it broke nothing. In the before-run, the denim jacket query picked a mesh top in 5 of 5 runs. In the after-run, it picked a denim vest in 5 of 5 runs, and the trace shows the description now arrives at the search tool without "under". All five criteria stayed at 5/5, so the fix didn't cause a regression anywhere they measure. What the criterion table does **not** show is the improvement itself: every row reads 5/5 in both runs. That's the same weakness I diagnosed, since none of my criteria checks whether the item matches what was asked for. I had to measure the fix with the before/after comparison above instead of with a criterion.
+
+It's also only a partial fix. The data has no denim *jacket* in size M under $50, so a denim vest is a reasonable closest match. But it ranks first only because "denim" matches and it's the cheapest. The search tool still can't tell a jacket from a vest. (See What's Still Broken.)
 
 
 ---
@@ -452,6 +505,17 @@ In `agent.py::run_agent`, the direct call `search_listings(description, size=siz
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
 
+No criterion is still missed: all five were met in both runs. That's partly because my targets were too low, as I said in my diagnoses. Here is what's still broken, and what I'd do about each:
+
+**1. The search tool still treats filler words as matches.** My fix stops the parser from leaking "under", but `tools.py::search_listings` would still score any filler word the user types. It has no list of words to ignore, and it matches with a substring test (`kw in haystack`), so "for" matches "perfect for", "under" matches "underneath", and "tee" matches "streetwear". "looking for a vintage graphic tee under $30" (the query in `agent.py`'s own example) still sends `'looking for a vintage graphic tee'` to the search. In my unit 3 Sample Run, that picked the Mesh Long-Sleeve Top because its description says "Great **for** layering". *What I'd do:* drop common filler words before scoring, and match whole words instead of substrings. *Why I stopped:* the unit allows one improvement, and the parser bug was the direct cause of the failure the run showed. This is the second cause, and it would be my next change, measured the same way.
+
+**2. Ties are broken by price, not by how well an item fits.** The Denim Vest beats the Shacket and the 90s Track Jacket for "denim jacket" because it's the cheapest. All three score on a single word. A user asking for a jacket would probably rather see a jacket. *What I'd do:* weight matches in the title higher than matches in the description, so the item type the user named counts for more. *Why I stopped:* same reason. One change per unit, and this one needs its own measurement.
+
+**3. Criterion 1 is too easy to pass.** It only checks that the loop finished with a fit card, so it passed even when the agent returned a mesh top for a denim jacket. *What I'd do:* add the tighter criterion from my diagnoses (the selected item's title or category is the kind of item the query named, in at least 4 of 5 tries) and run it before and after a search fix. *Why I stopped:* the rules say a criterion is only revised when it couldn't be measured. Criterion 1 measured what it said; it just said too little. So I'm naming the tighter version here instead of changing `criteria.md`.
+
+**4. Criterion 4 is ambiguous about what counts as "the price".** In the after-run, item 2, run 3 (not a counted try), the fit card said the dress was on Depop for "thirty bucks" instead of "$30". I'd count that as mentioning the price, but a stricter reader might not, so the criterion as written doesn't settle it. *What I'd do:* reword it to say what counts, e.g. "contains the price as a dollar amount (like $30 or $30.00)", and, since `create_fit_card` already asks the model to mention the price, tell it to write it as `$30.00` exactly. *Why I stopped:* it didn't change any counted verdict, and it's a wording problem in the criterion rather than a failure of the agent.
+
+**5. Model errors are handled, not retried.** In the before-run, one call failed with `500 INTERNAL` from the model service. The agent stopped with a clear message, which is the behavior I wanted from the failure-mode work. But for a user, one retry on a server-side error would probably have just worked. *What I'd do:* retry once on a 5xx error inside `generate.py` before raising `ModelUnavailable`. *Why I stopped:* it happened once in 35 runs and didn't affect a counted try, and `generate.py` is the course's shared adapter, not my agent.
 
 
 <!-- ═════════════════════════════════════════════════════════════════════
