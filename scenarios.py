@@ -88,6 +88,26 @@ SCENARIOS = [
         "criterion": 3,
     },
 
+    # Diagnostic runs for the unit 4 stretch features (not one of the five
+    # criteria). Added after the before/after runs, before stretch run #3.
+    {
+        # Stretch 2: XXS doesn't exist for this item, so the empty search
+        # should retry once without the size filter.
+        "name": "retry without size (diagnostic, stretch 2)",
+        "query": "denim jacket size XXS under $50",
+        "wardrobe": "example",
+        "criterion": None,
+    },
+    {
+        # Stretch 3: the agent's own example query. Filler words ("looking",
+        # "for") reach the search tool; in my unit 3 Sample Run this picked
+        # the Mesh Long-Sleeve Top ("Great for layering").
+        "name": "filler words (diagnostic, stretch 3)",
+        "query": "looking for a vintage graphic tee under $30",
+        "wardrobe": "example",
+        "criterion": None,
+    },
+
     # The empty-wardrobe failure mode was triggered by hand in Milestone 2
     # (see README, Loop Trace). Left out here to keep the run's model calls
     # down; it isn't one of the five criteria.

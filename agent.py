@@ -18,6 +18,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
         "price_comparison": None,    # what compare_price returned (stretch)
+        "relaxed": None,             # set when an empty search was retried without the size (unit 4 stretch 2)
         "error": None,               # set when the run ended early
     }
 
@@ -93,6 +94,42 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         ),
     )
 
+    # Unit 4 stretch 2: an empty search with a size retries ONCE without the
+    # size filter. Only the size is dropped, never the price.
+    if not results and size:
+        iteration += 1
+        trace.check_iterations(iteration)
+
+        try:
+            results = call_tool("search_listings", {
+                "description": description,
+                "size": None,
+                "max_price": max_price,
+            })
+        except MCPError as exc:
+            session["error"] = f"The listing search couldn't be reached: {exc}"
+            return session
+
+        session["search_results"] = results
+        trace.step(
+            f"search_listings RETRY, dropped size filter {size!r} (via MCP)",
+            inputs=str({"description": description, "size": None, "max_price": max_price}),
+            returned=(
+                f"{len(results)} listings, prices {[r['price'] for r in results]}: "
+                + ", ".join(r["title"] for r in results[:3])
+            ),
+        )
+
+        if not results:
+            session["error"] = (
+                f"No listings matched, even after dropping the size filter "
+                f"(size {size}). Try raising the price limit or using fewer or "
+                f"different keywords."
+            )
+            return session
+
+        session["relaxed"] = f"No listings in size {size}, so these are other sizes."
+
     # THIS IS THE BRANCH.
     if not results:
         session["error"] = (
@@ -146,20 +183,23 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         session["error"] = str(exc)
         return session
 
-    # 6. Compare the price (stretch: fourth tool).
+    # 6. Compare the price (stretch: fourth tool). Unit 4 stretch 1: called
+    # through MCP. A failure here doesn't throw away the outfit and fit card
+    # already made, so it's recorded in price_comparison instead of error.
     iteration += 1
     trace.check_iterations(iteration)
 
     try:
-        session["price_comparison"] = compare_price(session["selected_item"])
-        trace.step(
-            "compare_price",
-            inputs=str({"item": session["selected_item"]["title"]}),
-            returned=session["price_comparison"],
+        session["price_comparison"] = call_tool(
+            "compare_price", {"item": session["selected_item"]}
         )
-    except ModelUnavailable as exc:
-        session["error"] = str(exc)
-        return session
+    except MCPError as exc:
+        session["price_comparison"] = f"Price comparison unavailable: {exc}"
+    trace.step(
+        "compare_price (via MCP)",
+        inputs=str({"item": session["selected_item"]["title"]}),
+        returned=session["price_comparison"],
+    )
 
     return session
 
@@ -173,6 +213,8 @@ def _show(session: dict) -> None:
         return
 
     item = session["selected_item"] or {}
+    if session.get("relaxed"):
+        print(f"  note:     {session['relaxed']}")
     print(f"  found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
     print(f"  outfit:   {session['outfit_suggestion']}")
     print(f"  fit card: {session['fit_card']}")

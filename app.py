@@ -118,6 +118,10 @@ def _ask_one(query, wardrobe, use_trace):
         print(f"  {session['error']}")
     else:
         item = session["selected_item"] or {}
+        # Unit 4 stretch 2: say which constraint was dropped on a retry.
+        if session.get("relaxed"):
+            print(f"  Note:     {session['relaxed']}")
+            print()
         print(f"  Found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
         print()
         print(f"  Outfit:   {session['outfit_suggestion']}")

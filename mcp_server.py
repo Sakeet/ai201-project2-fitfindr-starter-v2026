@@ -6,68 +6,25 @@ them. MCP is an agreed shape you wrap a tool in so that anything speaking the
 same protocol can call it — your agent today, a different agent tomorrow,
 someone else's app after that.
 
-**You're moving one tool. Not three.** The point is to see the seam.
-`search_listings` is the one to move: it doesn't call the model, so nothing is
-slow and nothing changes between runs while you're learning the shape.
+This server offers two tools:
+
+  • search_listings — moved onto MCP in Milestone 1.
+  • compare_price   — moved onto MCP as unit 4 stretch 1.
 
     python mcp_server.py        starts the server (it will just sit there — that's right)
     python mcp_client.py        asks the server what it offers
-
-─────────────────────────────────────────────────────────────────────────────
-TODO — register one tool.
-
-Uncomment the block below and fill it in. Three things matter:
-
-  1. **The name.** Exactly what your agent will ask for.
-
-  2. **The description.** This is the part that isn't code and matters most.
-     Write it before you look at the example. You are not writing it for your
-     agent — you're writing it for an agent someone else builds, that will
-     never see your implementation. That isn't hypothetical; it's what every
-     MCP server on the registry is.
-
-     Two things to get right: name units and types ("price" is ambiguous,
-     "max_price, in whole dollars" isn't), and state the empty case. Last unit
-     the empty case was on your spec sheet for your loop's benefit. Here it's
-     part of a published contract.
-
-  3. **The typed inputs.** These come straight from your Tool Inventory. If the
-     types here don't match your README, one of the two is wrong — fix it.
-
-Then point your agent at it. In `run_agent()`, swap the direct call:
-
-    results = search_listings(description, size, max_price)
-
-for the MCP one:
-
-    from mcp_client import call_tool
-    results = call_tool("search_listings", {
-        "description": description,
-        "size": size,
-        "max_price": max_price,
-    })
-
-**What comes back should not change.** If it does, that difference is your
-first clue about what your tool was really returning before.
-
-🛑 Stop rule: if this isn't connecting after 40 minutes, stop. Keep your direct
-call, and write down in your README exactly where it broke — the error text and
-the last thing that worked. Then carry on to Milestone 2. Everything after this
-works with a direct call, and **a documented failure earns the point in full.**
-─────────────────────────────────────────────────────────────────────────────
 """
 
 from mcp.server.fastmcp import FastMCP
 
-from tools import search_listings as _search_listings_impl  # noqa: F401 — you'll use this below
+from tools import search_listings as _search_listings_impl
+from tools import compare_price as _compare_price_impl
 
 # log_level="WARNING" keeps the server from printing an INFO line for every
 # request. Without it your terminal fills with "Processing request of type
 # CallToolRequest" and the output you actually care about scrolls away.
 mcp = FastMCP("fitfindr", log_level="WARNING")
 
-
-# ── TODO: uncomment and fill this in ──────────────────────────────────────────
 
 @mcp.tool()
 def search_listings(
@@ -85,24 +42,23 @@ def search_listings(
     ties. Each has id, title, description, category, style_tags, size, condition,
     price, colors, brand (often null), and platform.
     If nothing matches, returns an empty list [] rather than an error.
-
     """
     return _search_listings_impl(description, size, max_price)
 
-# ──────────────────────────────────────────────────────────────────────────────
-#
-# Two notes on the block above.
-#
-# The registered name is the *function* name — so the block above registers
-# "search_listings", which is exactly what call_tool("search_listings", ...)
-# asks for. That is also why the import at the top of this file brings the real
-# implementation in under an alias: without it, the registered function and the
-# one it calls would be the same name, and the tool would call itself.
-#
-# FastMCP builds the input schema from your type hints, which is why the hints
-# are not optional here. `description: str` becomes a required string;
-# `max_price: float | None = None` becomes an optional number. Getting these
-# wrong is the most common reason a call is rejected.
+
+@mcp.tool()
+def compare_price(item: dict) -> str:
+    """
+    Compares one listing's price with the average price of the OTHER listings
+    in the same category (e.g. "tops", "bottoms", "outerwear").
+    `item` is a whole listing dict exactly as search_listings returns it; the
+    fields used are id, title, category, and price (a number, in US dollars).
+    Returns one sentence, e.g. "At $15.00, this is 32% below the average price
+    for tops ($22.21)." Within 5% either way it says "about the same as".
+    If no other listing shares the item's category, returns a sentence saying
+    there is nothing to compare it against, rather than an error.
+    """
+    return _compare_price_impl(item)
 
 
 if __name__ == "__main__":
